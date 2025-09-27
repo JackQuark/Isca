@@ -191,6 +191,8 @@
                                                               !  day of the year = solday \in [0,days per year]
         real(kind=rb)      :: equinox_day=0.75                ! fraction of the year defining NH autumn equinox \in [0,1]
         real(kind=rb)      :: solr_cnst= 1368.22              ! solar constant [W/m2]
+
+        real(kind=rb)      :: lat_cnst = -999.                ! specific lat for zenith calc. [deg]
 !-------------------------------------------------s--------------------------------------------------------------
 !
 !-------------------- diagnostics fields -------------------------------
@@ -213,7 +215,8 @@
              &lonstep, do_zm_tracers, do_zm_rad, &
              &do_precip_albedo, precip_albedo_mode, precip_albedo, precip_lat,&
              &do_read_co2, co2_file, co2_variable_name, use_dyofyr, solrad, &
-             &solday, equinox_day,solr_cnst, do_scm_ozone, scm_ozone
+             &solday, equinox_day,solr_cnst, do_scm_ozone, scm_ozone,&
+             lat_cnst
 
       end module rrtm_vars
 !*****************************************************************************************
@@ -304,14 +307,14 @@
                register_diag_field ( mod_name_rad, 'flux_lw', axes(1:2), Time, &
                  'LW surface flux', &
                  'W/m2', missing_value=missing_value               )
-	      id_olr = &
-	           register_diag_field ( mod_name_rad, 'olr', axes(1:2), Time, &
-	             'Outgoing LW radiation', &
-	             'W/m2', missing_value=missing_value               )
-	      id_toa_sw = &
-	           register_diag_field ( mod_name_rad, 'toa_sw', axes(1:2), Time, &
-	             'Net TOA SW flux', &
-	             'W/m2', missing_value=missing_value               )
+          id_olr = &
+              register_diag_field ( mod_name_rad, 'olr', axes(1:2), Time, &
+                'Outgoing LW radiation', &
+                'W/m2', missing_value=missing_value               )
+          id_toa_sw = &
+              register_diag_field ( mod_name_rad, 'toa_sw', axes(1:2), Time, &
+                'Net TOA SW flux', &
+                'W/m2', missing_value=missing_value               )
           id_albedo  = &
                register_diag_field ( mod_name_rad, 'rrtm_albedo', axes(1:2), Time, &
                  'Interactive albedo', &
@@ -615,8 +618,7 @@
           real(kind=rb),dimension(size(q,1),size(q,2),size(q,3)) :: q_tmp, h2o_vmr
           real(kind=rb),dimension(size(q,1),size(q,2)) :: fracsun
           real(kind=rb),dimension(size(q,1),size(q,2)) :: p2 !mp586 addition for annual mean insolation
-
-	  integer :: year_in_s
+          integer :: year_in_s
           real :: r_seconds, r_days, r_total_seconds, frac_of_day, frac_of_year, gmt, time_since_ae, rrsun, dt_rad_radians, day_in_s, r_solday, r_dt_rad_avg
 
 
@@ -665,46 +667,50 @@
 !!!!! mp586 addition for annual mean insolation !!!!!
 !!!! following https://github.com/sit23/Isca/blob/master/src/atmos_param/socrates/interface/socrates_interface.F90#L888 !!!!
 
-       	if (frierson_solar_rad) then
-            p2     = (1. - 3.*sin(lat(:,:))**2)/4.
-            coszen = 0.25 * (1.0 + del_sol * p2 + del_sw * sin(lat(:,:)))
-            rrsun  = 1 ! needs to be set, set to 1 so that stellar_radiation is unchanged in socrates_interface
-       else
+    if (frierson_solar_rad) then
+        p2     = (1. - 3.*sin(lat(:,:))**2)/4.
+        coszen = 0.25 * (1.0 + del_sol * p2 + del_sw * sin(lat(:,:)))
+        rrsun  = 1 ! needs to be set, set to 1 so that stellar_radiation is unchanged in socrates_interface
+    else
+        ! compute zenith angle
+        !  this is also an output, so need to compute even if we read radiation from file
+        call get_time(Time_loc, seconds, days)
+        call get_time(length_of_year(), year_in_s)
+        day_in_s = length_of_day()
+      
+        r_seconds=real(seconds)
+        r_days=real(days)
+        r_total_seconds=r_seconds+(r_days*86400.)
+      
+        frac_of_day = r_total_seconds / day_in_s
 
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        if(solday > 0) then
+            r_solday=real(solday)
+            frac_of_year=(r_solday*day_in_s)/year_in_s
+        else
+            frac_of_year = r_total_seconds / year_in_s
+        endif
+        gmt = abs(mod(frac_of_day, 1.0)) * 2.0 * pi
+        time_since_ae = modulo(frac_of_year-equinox_day, 1.0) * 2.0 * pi
 
-!
-! compute zenith angle
-!  this is also an output, so need to compute even if we read radiation from file
-	     call get_time(Time_loc, seconds, days)
-	     call get_time(length_of_year(), year_in_s)
-	     day_in_s = length_of_day()
-		 
-	     r_seconds=real(seconds)
-		 r_days=real(days)
-		 r_total_seconds=r_seconds+(r_days*86400.)
-		 
-	     frac_of_day = r_total_seconds / day_in_s
+        if (do_rad_time_avg) then
+            r_dt_rad_avg=real(dt_rad_avg)
+            dt_rad_radians = (r_dt_rad_avg/day_in_s)*2.0*pi
+            if (lat_cnst .ne. -999.) then
+                call diurnal_solar( &
+                    lat*0 + lat_cnst*pi/180, lon, &
+                    gmt, time_since_ae, coszen, fracsun, rrsun, dt_rad_radians)
+            else
+                call diurnal_solar( &
+                    lat                    , lon, &
+                    gmt, time_since_ae, coszen, fracsun, rrsun, dt_rad_radians)
+            endif
+        else
+            ! Seasonal Cycle: Use astronomical parameters to calculate insolation
+            call diurnal_solar(lat, lon, gmt, time_since_ae, coszen, fracsun, rrsun)
+        end if
 
-         if(solday > 0) then
-             r_solday=real(solday)
-             frac_of_year=(r_solday*day_in_s)/year_in_s
-	     else
-	         frac_of_year = r_total_seconds / year_in_s
-         endif
-	     gmt = abs(mod(frac_of_day, 1.0)) * 2.0 * pi
-	     time_since_ae = modulo(frac_of_year-equinox_day, 1.0) * 2.0 * pi
-
-          if(do_rad_time_avg) then
-	     r_dt_rad_avg=real(dt_rad_avg)
-	     dt_rad_radians = (r_dt_rad_avg/day_in_s)*2.0*pi
-	     call diurnal_solar(lat, lon, gmt, time_since_ae, coszen, fracsun, rrsun,dt_rad_radians)
-          else
-	     ! Seasonal Cycle: Use astronomical parameters to calculate insolation
-	     call diurnal_solar(lat, lon, gmt, time_since_ae, coszen, fracsun, rrsun)
-          end if
-
-   		end if !mp586 addition for annual mean insolation
+   	end if !mp586 addition for annual mean insolation
 
 ! input files: only deal with case where we don't need to call radiation at all
           if(do_read_radiation .and. do_read_sw_flux .and. do_read_lw_flux) then
@@ -858,7 +864,6 @@
           thalf = max(thalf, temp_lower_limit)
           thalf = min(thalf, temp_upper_limit)
 
-          
           !h2o=h2o_lower_limit
           ! SW seems to have a problem with too small coszen values. 
           ! anything lower than 0.01 (about 15min) is set to zero
