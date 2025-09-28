@@ -116,6 +116,7 @@ class CodeBase(Logger):
         #TODO 
 
         self.templates = Environment(loader=FileSystemLoader(self.templatedir))
+        self.mycode = []
 
         # read path names from the default file
         self.path_names = []
@@ -188,10 +189,10 @@ class CodeBase(Logger):
 
     @useworkdir
     @destructive
-    def write_path_names(self, path_names):
+    def write_path_names(self, path_names,openmode='w'):
         outfile = P(self.builddir, 'path_names')
         self.log.info('Writing path_names to %r' % outfile)
-        with open(outfile, 'w') as pn:
+        with open(outfile, openmode) as pn:
             pn.writelines('\n'.join(path_names))
 
     @useworkdir
@@ -241,7 +242,7 @@ class CodeBase(Logger):
 
     @useworkdir
     @destructive
-    def compile(self, debug=False, optimisation=None):
+    def compile(self, debug=False, optimisation=None, mycode=None):
         env = get_env_file()
         mkdir(self.builddir)
 
@@ -258,9 +259,16 @@ class CodeBase(Logger):
         compile_flags_str = ' '.join(compile_flags)
 
         # get path_names from the directory
+        if mycode is not None:
+            code = self.read_path_names(mycode)
+            self.write_path_names(code)
+            openmode='a'
+        else:
+            openmode='w'
+
         if not self.path_names:
             self.path_names = self.read_path_names(P(self.srcdir, 'extra', 'model', self.name, 'path_names'))
-        self.write_path_names(self.path_names)
+        self.write_path_names(self.path_names,openmode)
         path_names_str = P(self.builddir, 'path_names')
 
         vars = {
