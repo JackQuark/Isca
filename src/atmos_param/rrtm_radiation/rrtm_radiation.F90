@@ -81,6 +81,8 @@
         ! heating rates and fluxes, zenith angle when in-between radiation time steps
         real(kind=rb),allocatable,dimension(:,:)   :: sw_flux,lw_flux,zencos, olr, toa_sw! surface and TOA fluxes, cos(zenith angle) 
                                                                             ! dimension (lon x lat)
+        real(kind=rb),allocatable,dimension(:,:)   :: surf_uflx_sw, surf_uflx_lw, & ! surface SW and LW fluxes
+                                                      surf_dflx_sw, surf_dflx_lw    ! dimesion (lon x lat)
         real(kind=rb),allocatable,dimension(:,:,:) :: tdt_rad               ! heating rate [K/s]
                                                                             ! dimension (lon x lat x pfull)
         real(kind=rb),allocatable,dimension(:,:,:) :: tdt_sw_rad,tdt_lw_rad ! SW, LW radiation heating rates,
@@ -197,7 +199,8 @@
 !
 !-------------------- diagnostics fields -------------------------------
 
-        integer :: id_tdt_rad, id_tdt_sw, id_tdt_lw, id_coszen, id_flux_sw, id_flux_lw, id_olr, id_toa_sw, id_albedo,id_ozone, id_co2, id_fracday, id_half_level_temp, id_full_level_temp
+        integer :: id_tdt_rad, id_tdt_sw, id_tdt_lw, id_coszen, id_flux_sw, id_flux_lw, id_olr, id_toa_sw, id_albedo,id_ozone, id_co2, id_fracday, id_half_level_temp, id_full_level_temp, &
+                   id_surf_uflx_sw, id_surf_dflx_sw, id_surf_uflx_lw, id_surf_dflx_lw
         character(len=14), parameter :: mod_name_rad = 'rrtm_radiation' !s changed parameter name from mod_name to mod_name_rad as compiler objected, presumably because mod_name also defined in idealized_moist_physics.F90 after use rrtm_vars is included. 
         real :: missing_value = -999.
 
@@ -339,6 +342,23 @@
                register_diag_field ( mod_name_rad, 't_full_rrtm',axes(1:3) , Time, &
                  'Full level temperatures used by RRTM', &
                  'K', missing_value=missing_value               )                     
+         ! WP2-B
+          id_surf_uflx_sw = &
+               register_diag_field ( mod_name_rad,'surf_uflx_sw', axes(1:2), Time, &
+                 'Surface upward SW flux', &
+                 'W/m2', missing_value=missing_value               )
+          id_surf_dflx_sw = &
+               register_diag_field ( mod_name_rad,'surf_dflx_sw', axes(1:2), Time, &
+                 'Surface downward SW flux', &
+                 'W/m2', missing_value=missing_value               )
+          id_surf_uflx_lw = &
+               register_diag_field ( mod_name_rad,'surf_uflx_lw', axes(1:2), Time, &
+                 'Surface upward LW flux', &
+                 'W/m2', missing_value=missing_value               )
+          id_surf_dflx_lw = &
+               register_diag_field ( mod_name_rad,'surf_dflx_lw', axes(1:2), Time, &
+                 'Surface downward LW flux', &
+                 'W/m2', missing_value=missing_value               )
 ! 
 !------------ make sure namelist choices are consistent -------
 ! this does not work at the moment, as dt_atmos from coupler_mod induces a circular dependency at compilation
@@ -490,6 +510,11 @@
              num_precip  = 0
           endif
 
+         if ( id_surf_uflx_sw > 0 ) allocate( surf_uflx_sw( size(lonb,1)-1, size(latb,2)-1 ) )
+         if ( id_surf_dflx_sw > 0 ) allocate( surf_dflx_sw( size(lonb,1)-1, size(latb,2)-1 ) )
+         if ( id_surf_uflx_lw > 0 ) allocate( surf_uflx_lw( size(lonb,1)-1, size(latb,2)-1 ) )
+         if ( id_surf_dflx_lw > 0 ) allocate( surf_dflx_lw( size(lonb,1)-1, size(latb,2)-1 ) )
+
 	  call astronomy_init
 
           if(solday .gt. 0)then
@@ -610,6 +635,7 @@
                ,swuflx, swdflx, swuflxc, swdflxc
           real(kind=rb),dimension(size(q,1)/lonstep,size(q,2),size(q,3)  ) :: swijk,lwijk
           real(kind=rb),dimension(size(q,1)/lonstep,size(q,2)) :: swflxijk,lwflxijk
+          real(kind=rb),dimension(size(q,1)/lonstep,size(q,2)) :: swuflxijk,swdflxijk,lwuflxijk,lwdflxijk
           real(kind=rb),dimension(ncols_rrt,nlay_rrt+1):: phalf,thalf
           real(kind=rb),dimension(ncols_rrt)   :: tsrf,cosz_rr,albedo_rr
           real(kind=rb) :: dlon,dlat,dj,di 
@@ -943,7 +969,19 @@
                   ! output
                   uflx      , dflx    , hr      , uflxc, dflxc  , hrc)
           endif
-
+! ----- Output ----- rrtmg_lw/src/rrtmg_lw_rad.F90
+! real(kind=rb), intent(out) :: uflx(:,:)        ! Total sky longwave upward flux (W/m2)
+!                                                !    Dimensions: (ncol,nlay+1)
+! real(kind=rb), intent(out) :: dflx(:,:)        ! Total sky longwave downward flux (W/m2)
+!                                                !    Dimensions: (ncol,nlay+1)
+! real(kind=rb), intent(out) :: hr(:,:)          ! Total sky longwave radiative heating rate (K/d)
+!                                                !    Dimensions: (ncol,nlay)
+! real(kind=rb), intent(out) :: uflxc(:,:)       ! Clear sky longwave upward flux (W/m2)
+!                                                !    Dimensions: (ncol,nlay+1)
+! real(kind=rb), intent(out) :: dflxc(:,:)       ! Clear sky longwave downward flux (W/m2)
+!                                                !    Dimensions: (ncol,nlay+1)
+! real(kind=rb), intent(out) :: hrc(:,:)         ! Clear sky longwave radiative heating rate (K/d)
+!                                                !    Dimensions: (ncol,nlay)
           lwijk   = reshape(hr(:,sk:1:-1),(/ si/lonstep,sj,sk /))*daypersec
 
 !---------------------------------------------------------------------------------------------------------------
@@ -980,8 +1018,12 @@
           ! get the surface fluxes
           if(present(flux_sw).and.present(flux_lw))then
              !only surface fluxes are needed
-             swflxijk = reshape(swdflx(:,1)-swuflx(:,1),(/ si/lonstep,sj /)) ! net down SW flux
-             lwflxijk = reshape(  dflx(:,1)            ,(/ si/lonstep,sj /)) ! down LW flux
+             swuflxijk = reshape(swuflx(:,1), (/ si/lonstep,sj /)) ! up SW flux
+             swdflxijk = reshape(swdflx(:,1), (/ si/lonstep,sj /)) ! down SW flux
+             lwuflxijk = reshape(  uflx(:,1), (/ si/lonstep,sj /)) ! up LW flux
+             lwdflxijk = reshape(  dflx(:,1), (/ si/lonstep,sj /)) ! down LW flux
+             swflxijk  = swdflxijk - swuflxijk ! net down SW flux
+             lwflxijk  = lwdflxijk             ! down LW flux
              dlon=1./lonstep
              do i=1,size(swijk,1)
                 i1 = i+1
@@ -996,6 +1038,10 @@
                    else
                       flux_sw(ij1,:) = di*swflxijk(i1,:) + (1.-di)*swflxijk(i ,:)
                       flux_lw(ij1,:) = di*lwflxijk(i1,:) + (1.-di)*lwflxijk(i ,:)
+                      if ( id_surf_dflx_lw > 0 ) surf_uflx_sw(ij1,:) = di*swuflxijk(i1,:) + (1.-di)*swuflxijk(i,:)
+                      if ( id_surf_dflx_lw > 0 ) surf_dflx_sw(ij1,:) = di*swdflxijk(i1,:) + (1.-di)*swdflxijk(i,:)
+                      if ( id_surf_dflx_lw > 0 ) surf_uflx_lw(ij1,:) = di*lwuflxijk(i1,:) + (1.-di)*lwuflxijk(i,:)
+                      if ( id_surf_dflx_lw > 0 ) surf_dflx_lw(ij1,:) = di*lwdflxijk(i1,:) + (1.-di)*lwdflxijk(i,:)
                    endif
                 enddo
              enddo
@@ -1070,7 +1116,9 @@
           use rrtm_vars,only:         sw_flux,lw_flux,zencos,tdt_rad,tdt_sw_rad,tdt_lw_rad,t_half,&
                                       &id_tdt_rad,id_tdt_sw,id_tdt_lw,id_coszen,&
                                       &id_flux_sw,id_flux_lw,id_albedo,id_ozone, id_co2, id_fracday,&
-									  &id_olr,id_toa_sw,olr,toa_sw, id_half_level_temp, id_full_level_temp
+									           &id_olr,id_toa_sw,olr,toa_sw, id_half_level_temp, id_full_level_temp,&
+                                      &id_surf_uflx_sw, id_surf_dflx_sw, id_surf_uflx_lw, id_surf_dflx_lw,&
+                                      &surf_uflx_sw, surf_dflx_sw, surf_uflx_lw, surf_dflx_lw
           use diag_manager_mod, only: register_diag_field, send_data
           use time_manager_mod,only:  time_type
 
@@ -1150,6 +1198,19 @@
              used = send_data ( id_full_level_temp, t_full , Time)
           endif          
 
+!------- WP2-B                                     ------------
+          if ( id_surf_uflx_sw > 0 ) then
+             used = send_data ( id_surf_uflx_sw, surf_uflx_sw, Time )
+          endif
+          if ( id_surf_dflx_lw > 0 ) then
+             used = send_data ( id_surf_dflx_lw, surf_dflx_lw, Time )
+          endif
+          if ( id_surf_uflx_lw > 0 ) then
+             used = send_data ( id_surf_uflx_lw, surf_uflx_lw, Time )
+          endif
+          if ( id_surf_dflx_sw > 0 ) then
+             used = send_data ( id_surf_dflx_sw, surf_dflx_sw, Time )
+          endif
         end subroutine write_diag_rrtm
 !*****************************************************************************************
 
