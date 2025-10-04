@@ -189,10 +189,10 @@ class CodeBase(Logger):
 
     @useworkdir
     @destructive
-    def write_path_names(self, path_names,openmode='w'):
+    def write_path_names(self, path_names):
         outfile = P(self.builddir, 'path_names')
         self.log.info('Writing path_names to %r' % outfile)
-        with open(outfile, openmode) as pn:
+        with open(outfile, 'w') as pn:
             pn.writelines('\n'.join(path_names))
 
     @useworkdir
@@ -258,18 +258,29 @@ class CodeBase(Logger):
         compile_flags.extend(self.compile_flags)
         compile_flags_str = ' '.join(compile_flags)
 
-        # get path_names from the directory
-        if mycode is not None:
-            code = self.read_path_names(mycode)
-            self.write_path_names(code)
-            openmode='a'
-        else:
-            openmode='w'
-
+        # if path_names already in build dir
+        if os.path.exists(outfile := P(self.builddir, 'path_names')):
+            self.path_names = self.read_path_names(outfile)
+        # else get path_names from Isca template
         if not self.path_names:
             self.path_names = self.read_path_names(P(self.srcdir, 'extra', 'model', self.name, 'path_names'))
-        self.write_path_names(self.path_names,openmode)
-        path_names_str = P(self.builddir, 'path_names')
+        # for user codes
+        if mycode is not None:
+            code = self.read_path_names(mycode)
+            for c in code:
+                for i, p in enumerate(self.path_names):
+                    if os.path.basename(p) == os.path.basename(c):
+                        if p == c: # same path
+                            break
+                        else: # same basename.f90, but different path. Replace with new path
+                            self.log.info('Replacing path_name %s with %s' % (p, c))
+                            self.path_names[i] = c
+                            sh.touch(c)
+                            break
+                else: # new basename.f90
+                    self.path_names.append(c)
+                    
+        self.write_path_names(self.path_names)
 
         vars = {
             'execdir': self.builddir,
@@ -278,7 +289,7 @@ class CodeBase(Logger):
             'workdir': self.workdir,
             'compile_flags': compile_flags_str,
             'env_source': env,
-            'path_names': path_names_str,
+            'path_names': outfile,
             'executable_name': self.executable_name,
             'run_idb': debug,
         }
