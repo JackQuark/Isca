@@ -540,12 +540,11 @@
 ! to be used.  Clear sky calculation is done simultaneously.
 ! For McICA, RTRNMC is called for clear and cloudy calculations.
 
-         call rtrnmc(nlayers, istart, iend, iout, pz, semiss, ncbands, &
-                     cldfmc, taucmc, planklay, planklev, plankbnd, &
-                     pwvcm, fracs, taut, &
-                     totuflux, totdflux, fnet, htr, &
-                     totuclfl, totdclfl, fnetc, htrc, &
-                     idrv, dplankbnd_dt, dtotuflux_dt, dtotuclfl_dt )
+         call rtrnmc(nlayers, istart, iend, iout, &
+                     pz, pwvcm, semiss, planklay, planklev, plankbnd, fracs, taut, & ! Atmosphere
+                     ncbands, cldfmc, taucmc, idrv, dplankbnd_dt, & ! Clouds 
+                     totuflux, totdflux, fnet, htr, dtotuflux_dt, & ! total output
+                     totuclfl, totdclfl, fnetc, htrc, dtotuclfl_dt) ! clear sky output
 
 !  Transfer up and down fluxes and heating rate to output arrays.
 !  Vertical indexing goes from bottom to top; reverse here for GCM if necessary.

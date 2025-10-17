@@ -29,12 +29,11 @@
       contains
 
 !-----------------------------------------------------------------------------
-      subroutine rtrnmc(nlayers, istart, iend, iout, pz, semiss, ncbands, &
-                        cldfmc, taucmc, planklay, planklev, plankbnd, &
-                        pwvcm, fracs, taut, &
-                        totuflux, totdflux, fnet, htr, &
-                        totuclfl, totdclfl, fnetc, htrc, &
-                        idrv, dplankbnd_dt, dtotuflux_dt, dtotuclfl_dt )
+      subroutine rtrnmc(nlayers, istart, iend, iout, &
+                        pz, pwvcm, semiss, planklay, planklev, plankbnd, fracs, taut, &
+                        ncbands, cldfmc, taucmc, idrv, dplankbnd_dt, &
+                        totuflux, totdflux, fnet, htr, dtotuflux_dt, &
+                        totuclfl, totdclfl, fnetc, htrc, dtotuclfl_dt)
 !-----------------------------------------------------------------------------
 !
 !  Original version:   E. J. Mlawer, et al. RRTM_V3.0
