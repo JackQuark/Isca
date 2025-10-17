@@ -22,11 +22,12 @@ cb = IscaCodeBase.from_directory(GFDL_BASE)
 # $GFDL_BASE and not the checked out git repo.
 
 cb.compile()  # compile the source code to working directory $GFDL_WORK/codebase
-cb.compile(mycode='./kang_qflux')  # compile the source code to working directory $GFDL_WORK/codebase
+cb.compile(mycode='./mycodes')
 
 # create an Experiment object to handle the configuration of model parameters
 # and output diagnostics
-expname='T42_kangm20_slab1m_SBM'
+# expname='T42_kangm20_slab1m_SBM'
+expname='uniformT42_nonrot'
 exp = Experiment(expname, codebase=cb)
 
 #exp.inputfiles = [os.path.join(GFDL_BASE,'input/rrtm_input_files/ozone_1990.nc')]
@@ -36,6 +37,7 @@ diag = DiagTable()
 diag.add_file('atmos_daily', 1, 'days', time_units='days')
 
 #Tell model which diagnostics to write
+diag.add_field('dynamics', 'ps', time_avg=True)
 diag.add_field('atmosphere', 'precipitation', time_avg=True)
 diag.add_field('mixed_layer', 't_surf', time_avg=True)
 diag.add_field('mixed_layer', 'flux_t', time_avg=True)
@@ -45,6 +47,15 @@ diag.add_field('rrtm_radiation', 'flux_sw', time_avg=True)
 diag.add_field('rrtm_radiation', 'flux_lw', time_avg=True)
 diag.add_field('rrtm_radiation', 'surf_lwuflx', time_avg=True)
 diag.add_field('rrtm_radiation', 'olr', time_avg=True)
+diag.add_field('atmosphere', 'rh', time_avg=True)
+diag.add_field('dynamics', 'sphum', time_avg=True)
+diag.add_field('dynamics', 'ucomp', time_avg=True)
+diag.add_field('dynamics', 'vcomp', time_avg=True)
+diag.add_field('dynamics', 'temp', time_avg=True)
+diag.add_field('dynamics', 'vor', time_avg=True)
+diag.add_field('dynamics', 'div', time_avg=True)
+diag.add_field('dynamics', 'height', time_avg=True)
+diag.add_field('dynamics', 'omega', time_avg=True)
 
 exp.diag_table = diag
 
@@ -67,7 +78,7 @@ exp.namelist = namelist = Namelist({
     'idealized_moist_phys_nml': {
         'two_stream_gray': False,
         'do_rrtm_radiation': True,    #Use RRTM radiation, not grey
-        'convection_scheme': 'SIMPLE_BETTS_MILLER',     #Use the simple Betts Miller convection scheme
+        'convection_scheme': 'ENTRAINING_QE',
         'do_damping': True,
         'turb':True,
         'mixed_layer_bc':True,
@@ -109,8 +120,9 @@ exp.namelist = namelist = Namelist({
         'tconst' : 285.,
         'prescribe_initial_dist':True,
         'evaporation':True,
-        'do_qflux':True        
-#        'do_qflux':False
+        'do_qflux':True,
+        'do_uniform_sst':True,
+        'uniform_sst_value':303.78,
     },
 
     'qflux_nml': {
@@ -123,6 +135,10 @@ exp.namelist = namelist = Namelist({
         'rhbm':0.7,
         'Tmin':160.,
         'Tmax':350.   
+    },
+    
+    'entraining_qe_moist_convection_nml': {
+        'entpar': 0.0,
     },
     
     'lscale_cond_nml': {
@@ -151,8 +167,8 @@ exp.namelist = namelist = Namelist({
         'dt_rad': 7200, #Use long RRTM timestep
         #'dt_rad_avg': 86400, #no diurnal cycle
         'do_read_ozone':False,
-        'co2ppmv':300
- #       'ozone_file':'ozone_1990'
+        'co2ppmv':300,
+        'lat_cnst': 0.0,
     },
 
     # FMS Framework configuration
@@ -188,30 +204,31 @@ exp.namelist = namelist = Namelist({
 #Lets do a run!
 if __name__=="__main__":
     exp.set_resolution('T42')
-    exp.run(1, use_restart=False, num_cores=NCORES) 
-    for i in range(2,16):
-        exp.run(i, num_cores=NCORES)
+    exp.run(1, use_restart=False, num_cores=NCORES)
+    # for i in range(2,11):
+    #     exp.run(i, num_cores=NCORES)
 
-    diag = DiagTable()
-    diag.add_file('atmos_bidaily', 12, 'hours', time_units='days')
-    diag.add_field('dynamics', 'ps', time_avg=True)
-    diag.add_field('atmosphere', 'precipitation', time_avg=True)
-    diag.add_field('mixed_layer', 't_surf', time_avg=True)
-    diag.add_field('mixed_layer', 'flux_t', time_avg=True)
-    diag.add_field('mixed_layer', 'flux_lhe', time_avg=True)
-    diag.add_field('rrtm_radiation', 'toa_sw', time_avg=True)
-    diag.add_field('rrtm_radiation', 'flux_sw', time_avg=True)
-    diag.add_field('rrtm_radiation', 'flux_lw', time_avg=True)
-    diag.add_field('rrtm_radiation', 'surf_lwuflx', time_avg=True)
-    diag.add_field('rrtm_radiation', 'olr', time_avg=True)
-    diag.add_field('atmosphere', 'rh', time_avg=True)
-    diag.add_field('dynamics', 'sphum', time_avg=True)
-    diag.add_field('dynamics', 'ucomp', time_avg=True)
-    diag.add_field('dynamics', 'vcomp', time_avg=True)
-    diag.add_field('dynamics', 'temp', time_avg=True)
-    diag.add_field('dynamics', 'vor', time_avg=True)
-    diag.add_field('dynamics', 'div', time_avg=True)
-    diag.add_field('dynamics', 'height', time_avg=True)
-    diag.add_field('dynamics', 'omega', time_avg=True)
-    exp.diag_table = diag
-    exp.run(16, num_cores=NCORES)
+    # diag = DiagTable()
+    # diag.add_file('atmos_bidaily', 12, 'hours', time_units='days')
+    # diag.add_field('dynamics', 'ps', time_avg=True)
+    # diag.add_field('atmosphere', 'precipitation', time_avg=True)
+    # diag.add_field('mixed_layer', 't_surf', time_avg=True)
+    # diag.add_field('mixed_layer', 'flux_t', time_avg=True)
+    # diag.add_field('mixed_layer', 'flux_lhe', time_avg=True)
+    # diag.add_field('rrtm_radiation', 'toa_sw', time_avg=True)
+    # diag.add_field('rrtm_radiation', 'flux_sw', time_avg=True)
+    # diag.add_field('rrtm_radiation', 'flux_lw', time_avg=True)
+    # diag.add_field('rrtm_radiation', 'surf_lwuflx', time_avg=True)
+    # diag.add_field('rrtm_radiation', 'olr', time_avg=True)
+    # diag.add_field('atmosphere', 'rh', time_avg=True)
+    # diag.add_field('dynamics', 'sphum', time_avg=True)
+    # diag.add_field('dynamics', 'ucomp', time_avg=True)
+    # diag.add_field('dynamics', 'vcomp', time_avg=True)
+    # diag.add_field('dynamics', 'temp', time_avg=True)
+    # diag.add_field('dynamics', 'vor', time_avg=True)
+    # diag.add_field('dynamics', 'div', time_avg=True)
+    # diag.add_field('dynamics', 'height', time_avg=True)
+    # diag.add_field('dynamics', 'omega', time_avg=True)
+    # exp.diag_table = diag
+    # exp.run(11, num_cores=NCORES)
+    

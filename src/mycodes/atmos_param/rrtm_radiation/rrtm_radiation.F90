@@ -987,7 +987,10 @@
              !only surface fluxes are needed
              swflxijk = reshape(swdflx(:,1)-swuflx(:,1),(/ si/lonstep,sj /)) ! net down SW flux
              lwflxijk = reshape(  dflx(:,1)            ,(/ si/lonstep,sj /)) ! down LW flux
+             swuflxijk = reshape(swuflx(:,1)           ,(/ si/lonstep,sj /)) ! up SW flux
+             swdflxijk = reshape(swdflx(:,1)           ,(/ si/lonstep,sj /)) ! down SW flux
              lwuflxijk = reshape(  uflx(:,1)           ,(/ si/lonstep,sj /)) ! up LW flux
+             lwdflxijk = reshape(  dflx(:,1)           ,(/ si/lonstep,sj /)) ! down LW flux
              dlon=1./lonstep
              do i=1,size(swijk,1)
                 i1 = i+1

@@ -27,54 +27,20 @@ class Experiment(Logger, EventEmitter):
     """A basic GFDL experiment"""
 
     RESOLUTIONS = {
-        'T511': {
-            'lon_max': 1536,
-            'lat_max': 768,
-            'num_fourier': 511,
-            'num_spherical': 512
-        },
-        'T340': {
-            'lon_max': 1024,
-            'lat_max': 512,
-            'num_fourier': 340,
-            'num_spherical': 341
-        },
-        'T255': {
-            'lon_max': 768,
-            'lat_max': 384,
-            'num_fourier': 255,
-            'num_spherical': 256
-        },
-        'T213': {
-            'lon_max': 640,
-            'lat_max': 320,
-            'num_fourier': 213,
-            'num_spherical': 214
-        },
         'T170': {
             'lon_max': 512,
             'lat_max': 256,
             'num_fourier': 170,
             'num_spherical': 171
         },
-        'T127': {
-            'lon_max': 384,
-            'lat_max': 192,
-            'num_fourier': 127,
-            'num_spherical': 128
-        },
+
         'T85': {
             'lon_max': 256,
             'lat_max': 128,
             'num_fourier': 85,
             'num_spherical': 86
         },
-        'T63': {
-            'lon_max': 192,
-            'lat_max': 96,
-            'num_fourier': 63,
-            'num_spherical': 64
-        },
+
         'T42': {
             'lon_max': 128,
             'lat_max': 64,
@@ -381,7 +347,6 @@ class Experiment(Logger, EventEmitter):
             self.write_namelist(outdir)
             self.write_field_table(outdir)
             self.write_diag_table(outdir)
-            # sh.cp(P(self.rundir,'logfile.000000.out'), outdir)
             self.codebase.write_source_control_status(P(outdir, 'git_hash_used.txt'))
 
         self.clear_rundir()
