@@ -1,4 +1,0 @@
-echo loadmodules
-
-source ${GFDL_BASE}/src/extra/env/${GFDL_ENV}
-
