@@ -1,1 +1,5 @@
-Isca_test_run/
+# Byte-compiled / optimized / DLL files
+__pycache__/
+
+# C extensions
+*.so
