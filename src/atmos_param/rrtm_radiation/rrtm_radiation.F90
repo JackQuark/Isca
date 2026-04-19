@@ -79,8 +79,10 @@
         !  cloud & aerosol optical depths, cloud and aerosol specific parameters. Set to zero
         real(kind=rb),allocatable,dimension(:,:,:) :: taucld,tauaer, sw_zro, zro_sw
         ! heating rates and fluxes, zenith angle when in-between radiation time steps
-        real(kind=rb),allocatable,dimension(:,:)   :: sw_flux,lw_flux,zencos, olr, toa_sw! surface and TOA fluxes, cos(zenith angle) 
-                                                                            ! dimension (lon x lat)
+        real(kind=rb),allocatable,dimension(:,:)   :: sw_flux, lw_flux, &         ! surface and TOA fluxes, cos(zenith angle) 
+                                                      olr, toa_sw, zencos         ! dimension (lon x lat)
+        real(kind=rb),allocatable,dimension(:,:)   :: surf_swuflx, surf_lwuflx, & ! surf flux diag added by Quark
+                                                      surf_swdflx, surf_lwdflx    ! dimension (lon x lat)
         real(kind=rb),allocatable,dimension(:,:,:) :: tdt_rad               ! heating rate [K/s]
                                                                             ! dimension (lon x lat x pfull)
         real(kind=rb),allocatable,dimension(:,:,:) :: tdt_sw_rad,tdt_lw_rad ! SW, LW radiation heating rates,
@@ -190,17 +192,8 @@
         integer(kind=im)   :: solday=0                        ! if >0, do perpetual run corresponding to
                                                               !  day of the year = solday \in [0,days per year]
         real(kind=rb)      :: equinox_day=0.75                ! fraction of the year defining NH autumn equinox \in [0,1]
-        real(kind=rb)      :: solr_cnst= 1368.22              ! solar constant [W/m2]
-!-------------------------------------------------s--------------------------------------------------------------
-!
-!-------------------- diagnostics fields -------------------------------
-
-        integer :: id_tdt_rad, id_tdt_sw, id_tdt_lw, id_coszen, id_flux_sw, id_flux_lw, id_olr, id_toa_sw, id_albedo,id_ozone, id_co2, id_fracday, id_half_level_temp, id_full_level_temp
-        character(len=14), parameter :: mod_name_rad = 'rrtm_radiation' !s changed parameter name from mod_name to mod_name_rad as compiler objected, presumably because mod_name also defined in idealized_moist_physics.F90 after use rrtm_vars is included. 
-        real :: missing_value = -999.
-
-!---------------------------------------------------------------------------------------------------------------
-!---------------------------------------------------------------------------------------------------------------
+        real(kind=rb)      :: solr_cnst=1368.22               ! solar constant [W/m2]
+        real(kind=rb)      :: lat_cnst=-999.                  ! specific lat for zenith calc. [deg]
 
         namelist/rrtm_radiation_nml/ include_secondary_gases, do_read_ozone, ozone_file, input_o3_file_is_mmr, &
              &do_read_h2o, h2o_file, convert_sphum_to_vmr, ch4_val, n2o_val, o2_val, cfc11_val, cfc12_val, cfc22_val, ccl4_val, &
@@ -213,7 +206,14 @@
              &lonstep, do_zm_tracers, do_zm_rad, &
              &do_precip_albedo, precip_albedo_mode, precip_albedo, precip_lat,&
              &do_read_co2, co2_file, co2_variable_name, use_dyofyr, solrad, &
-             &solday, equinox_day,solr_cnst, do_scm_ozone, scm_ozone
+             &solday, equinox_day,solr_cnst, do_scm_ozone, scm_ozone, lat_cnst
+
+!---------------------------------------------------------------------------------------------------------------
+!   diagnostics fields      
+        integer :: id_tdt_rad, id_tdt_sw, id_tdt_lw, id_coszen, id_flux_sw, id_flux_lw, id_olr, id_toa_sw, id_albedo,id_ozone, id_co2, id_fracday, id_half_level_temp, id_full_level_temp, &
+                   id_surf_swuflx, id_surf_swdflx, id_surf_lwuflx, id_surf_lwdflx
+        character(len=14), parameter :: mod_name_rad = 'rrtm_radiation' !s changed parameter name from mod_name to mod_name_rad as compiler objected, presumably because mod_name also defined in idealized_moist_physics.F90 after use rrtm_vars is included. 
+        real :: missing_value = -999.
 
       end module rrtm_vars
 !*****************************************************************************************
@@ -336,6 +336,23 @@
                register_diag_field ( mod_name_rad, 't_full_rrtm',axes(1:3) , Time, &
                  'Full level temperatures used by RRTM', &
                  'K', missing_value=missing_value               )                     
+          ! surf flux diag added by Quark
+          id_surf_swuflx = &
+               register_diag_field ( mod_name_rad,'surf_swuflx', axes(1:2), Time, &
+                 'Surface upward SW flux', &
+                 'W/m2', missing_value=missing_value               )
+          id_surf_swdflx = &
+               register_diag_field ( mod_name_rad,'surf_swdflx', axes(1:2), Time, &
+                 'Surface downward SW flux', &
+                 'W/m2', missing_value=missing_value               )
+          id_surf_lwuflx = &
+               register_diag_field ( mod_name_rad,'surf_lwuflx', axes(1:2), Time, &
+                 'Surface upward LW flux', &
+                 'W/m2', missing_value=missing_value               )
+          id_surf_lwdflx = &
+               register_diag_field ( mod_name_rad,'surf_lwdflx', axes(1:2), Time, &
+                 'Surface downward LW flux', &
+                 'W/m2', missing_value=missing_value               )
 ! 
 !------------ make sure namelist choices are consistent -------
 ! this does not work at the moment, as dt_atmos from coupler_mod induces a circular dependency at compilation
@@ -472,10 +489,14 @@
                allocate(sw_flux(size(lonb,1)-1,size(latb,2)-1))
           if(store_intermediate_rad .or. id_flux_lw > 0) &
                allocate(lw_flux(size(lonb,1)-1,size(latb,2)-1))
-	      if(id_olr > 0) &
-	           allocate(olr(size(lonb,1)-1,size(latb,2)-1))
-	      if(id_toa_sw > 0) &
-	           allocate(toa_sw(size(lonb,1)-1,size(latb,2)-1))
+          if(id_olr > 0) allocate(olr(size(lonb,1)-1,size(latb,2)-1))
+          if(id_toa_sw > 0) allocate(toa_sw(size(lonb,1)-1,size(latb,2)-1))
+          ! surf flux diag added by Quark
+          if(id_surf_swuflx > 0) allocate(surf_swuflx(size(lonb,1)-1,size(latb,2)-1))
+          if(id_surf_swdflx > 0) allocate(surf_swdflx(size(lonb,1)-1,size(latb,2)-1))
+          if(id_surf_lwuflx > 0) allocate(surf_lwuflx(size(lonb,1)-1,size(latb,2)-1))
+          if(id_surf_lwdflx > 0) allocate(surf_lwdflx(size(lonb,1)-1,size(latb,2)-1))
+          
           if(do_precip_albedo)allocate(rrtm_precip(size(lonb,1)-1,size(latb,2)-1))
           if(store_intermediate_rad .or. id_tdt_rad > 0)&
                allocate(tdt_rad(size(lonb,1)-1,size(latb,2)-1,nlay))
@@ -607,6 +628,7 @@
                ,swuflx, swdflx, swuflxc, swdflxc
           real(kind=rb),dimension(size(q,1)/lonstep,size(q,2),size(q,3)  ) :: swijk,lwijk
           real(kind=rb),dimension(size(q,1)/lonstep,size(q,2)) :: swflxijk,lwflxijk
+          real(kind=rb),dimension(size(q,1)/lonstep,size(q,2)) :: swuflxijk,swdflxijk,lwuflxijk,lwdflxijk
           real(kind=rb),dimension(ncols_rrt,nlay_rrt+1):: phalf,thalf
           real(kind=rb),dimension(ncols_rrt)   :: tsrf,cosz_rr,albedo_rr
           real(kind=rb) :: dlon,dlat,dj,di 
@@ -615,7 +637,7 @@
           real(kind=rb),dimension(size(q,1),size(q,2),size(q,3)) :: q_tmp, h2o_vmr
           real(kind=rb),dimension(size(q,1),size(q,2)) :: fracsun
           real(kind=rb),dimension(size(q,1),size(q,2)) :: p2 !mp586 addition for annual mean insolation
-
+          real(kind=rb),dimension(size(q,1),size(q,2)) :: latr !lat in radians (for zenith calc.)
 	  integer :: year_in_s
           real :: r_seconds, r_days, r_total_seconds, frac_of_day, frac_of_year, gmt, time_since_ae, rrsun, dt_rad_radians, day_in_s, r_solday, r_dt_rad_avg
 
@@ -694,14 +716,20 @@
          endif
 	     gmt = abs(mod(frac_of_day, 1.0)) * 2.0 * pi
 	     time_since_ae = modulo(frac_of_year-equinox_day, 1.0) * 2.0 * pi
+            ! Jenny WP2-A
+            if(lat_cnst .ne. -999.) then
+                latr = lat_cnst*pi/180
+            else
+                latr = lat
+            endif
 
           if(do_rad_time_avg) then
 	     r_dt_rad_avg=real(dt_rad_avg)
 	     dt_rad_radians = (r_dt_rad_avg/day_in_s)*2.0*pi
-	     call diurnal_solar(lat, lon, gmt, time_since_ae, coszen, fracsun, rrsun,dt_rad_radians)
+	     call diurnal_solar(latr, lon, gmt, time_since_ae, coszen, fracsun, rrsun,dt_rad_radians)
           else
 	     ! Seasonal Cycle: Use astronomical parameters to calculate insolation
-	     call diurnal_solar(lat, lon, gmt, time_since_ae, coszen, fracsun, rrsun)
+	     call diurnal_solar(latr, lon, gmt, time_since_ae, coszen, fracsun, rrsun)
           end if
 
    		end if !mp586 addition for annual mean insolation
@@ -977,6 +1005,10 @@
              !only surface fluxes are needed
              swflxijk = reshape(swdflx(:,1)-swuflx(:,1),(/ si/lonstep,sj /)) ! net down SW flux
              lwflxijk = reshape(  dflx(:,1)            ,(/ si/lonstep,sj /)) ! down LW flux
+             swuflxijk = reshape(swuflx(:,1)           ,(/ si/lonstep,sj /)) ! up SW flux
+             swdflxijk = reshape(swdflx(:,1)           ,(/ si/lonstep,sj /)) ! down SW flux
+             lwuflxijk = reshape(  uflx(:,1)           ,(/ si/lonstep,sj /)) ! up LW flux
+             lwdflxijk = reshape(  dflx(:,1)           ,(/ si/lonstep,sj /)) ! down LW flux
              dlon=1./lonstep
              do i=1,size(swijk,1)
                 i1 = i+1
@@ -991,6 +1023,10 @@
                    else
                       flux_sw(ij1,:) = di*swflxijk(i1,:) + (1.-di)*swflxijk(i ,:)
                       flux_lw(ij1,:) = di*lwflxijk(i1,:) + (1.-di)*lwflxijk(i ,:)
+                      if ( id_surf_swuflx > 0 ) surf_swuflx(ij1,:) = di*swuflxijk(i1,:) + (1.-di)*swuflxijk(i,:)
+                      if ( id_surf_swdflx > 0 ) surf_swdflx(ij1,:) = di*swdflxijk(i1,:) + (1.-di)*swdflxijk(i,:)
+                      if ( id_surf_lwuflx > 0 ) surf_lwuflx(ij1,:) = di*lwuflxijk(i1,:) + (1.-di)*lwuflxijk(i,:)
+                      if ( id_surf_lwdflx > 0 ) surf_lwdflx(ij1,:) = di*lwdflxijk(i1,:) + (1.-di)*lwdflxijk(i,:)
                    endif
                 enddo
              enddo
@@ -1065,7 +1101,9 @@
           use rrtm_vars,only:         sw_flux,lw_flux,zencos,tdt_rad,tdt_sw_rad,tdt_lw_rad,t_half,&
                                       &id_tdt_rad,id_tdt_sw,id_tdt_lw,id_coszen,&
                                       &id_flux_sw,id_flux_lw,id_albedo,id_ozone, id_co2, id_fracday,&
-									  &id_olr,id_toa_sw,olr,toa_sw, id_half_level_temp, id_full_level_temp
+									  &id_olr,id_toa_sw,olr,toa_sw, id_half_level_temp, id_full_level_temp,&
+                                      &id_surf_swuflx, id_surf_swdflx, id_surf_lwuflx, id_surf_lwdflx,&
+                                      &surf_swuflx, surf_swdflx, surf_lwuflx, surf_lwdflx
           use diag_manager_mod, only: register_diag_field, send_data
           use time_manager_mod,only:  time_type
 
@@ -1144,6 +1182,21 @@
           if (present(t_full) .and. id_full_level_temp > 0 ) then
              used = send_data ( id_full_level_temp, t_full , Time)
           endif          
+
+!------- WP2-B                                     ------------
+          if ( id_surf_swuflx > 0 ) then
+             used = send_data ( id_surf_swuflx, surf_swuflx, Time )
+          endif
+          if ( id_surf_swdflx > 0 ) then
+             used = send_data ( id_surf_swdflx, surf_swdflx, Time )
+          endif
+          if ( id_surf_lwuflx > 0 ) then
+             used = send_data ( id_surf_lwuflx, surf_lwuflx, Time )
+          endif
+          if ( id_surf_lwdflx > 0 ) then
+             used = send_data ( id_surf_lwdflx, surf_lwdflx, Time )
+          endif
+
 
         end subroutine write_diag_rrtm
 !*****************************************************************************************
