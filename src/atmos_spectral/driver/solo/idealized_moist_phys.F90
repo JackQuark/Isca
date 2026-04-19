@@ -1074,62 +1074,62 @@ end if
 
 
 if(.not.gp_surface) then 
-  call surface_flux(                                                        &
-                  tg(:,:,num_levels,previous),                              &
- grid_tracers(:,:,num_levels,previous,nsphum),                              &
-                  ug(:,:,num_levels,previous),                              &
-                  vg(:,:,num_levels,previous),                              &
-               p_full(:,:,num_levels,current),                              &
-   z_full(:,:,num_levels,current)-z_surf(:,:),                              &
-             p_half(:,:,num_levels+1,current),                              &
-                                  t_surf(:,:),                              &
-                                  t_surf(:,:),                              &
-                                  q_surf(:,:),                              &
-                                       bucket,                              & 
-                    bucket_depth(:,:,current),                              &
-                        max_bucket_depth_land,                              &
-                         depth_change_lh(:,:),                              &
-                       depth_change_conv(:,:),                              &
-                       depth_change_cond(:,:),                              &
-                                  u_surf(:,:),                              &
-                                  v_surf(:,:),                              &
-                               rough_mom(:,:),                              &
-                              rough_heat(:,:),                              &
-                             rough_moist(:,:),                              &
-                               rough_mom(:,:),                              &
-                                    gust(:,:),                              &
-                                  flux_t(:,:),                              &
-                                  flux_q(:,:),                              &
-                                  flux_r(:,:),                              &
-                                  flux_u(:,:),                              &
-                                  flux_v(:,:),                              &
-                                  drag_m(:,:),                              &
-                                  drag_t(:,:),                              &
-                                  drag_q(:,:),                              &
-                                   w_atm(:,:),                              &
-                                   ustar(:,:),                              &
-                                   bstar(:,:),                              &
-                                   qstar(:,:),                              &
-                               dhdt_surf(:,:),                              &
-                               dedt_surf(:,:),                              &
-                               dedq_surf(:,:),                              &
-                               drdt_surf(:,:),                              &
-                                dhdt_atm(:,:),                              &
-                                dedq_atm(:,:),                              &
-                              dtaudu_atm(:,:),                              &
-                              dtaudv_atm(:,:),                              &
-                                ex_del_m(:,:),                              &
-                                ex_del_h(:,:),                              &
-                                ex_del_q(:,:),                              &
-                                 temp_2m(:,:),                              &
-                                   u_10m(:,:),                              &
-                                   v_10m(:,:),                              &
-                                    q_2m(:,:),                              &
-                                   rh_2m(:,:),                              &
-                                      delta_t,                              &
-                                    land(:,:),                              &
-                               .not.land(:,:),                              &
-                                   avail(:,:)  )
+  call surface_flux(                           &
+                  tg(:,:,num_levels,previous), & ! t_atm
+ grid_tracers(:,:,num_levels,previous,nsphum), & ! q_atm_in
+                  ug(:,:,num_levels,previous), & ! u_atm
+                  vg(:,:,num_levels,previous), & ! v_atm
+               p_full(:,:,num_levels,current), & ! p_atm
+   z_full(:,:,num_levels,current)-z_surf(:,:), & ! z_atm
+             p_half(:,:,num_levels+1,current), & ! p_surf
+                                  t_surf(:,:), & ! t_surf
+                                  t_surf(:,:), & ! t_ca
+                                  q_surf(:,:), & ! q_surf
+                                       bucket, & ! bucket
+                    bucket_depth(:,:,current), & ! bucket_depth
+                        max_bucket_depth_land, & ! max_bucket_depth_land
+                         depth_change_lh(:,:), & ! depth_change_lh_1d
+                       depth_change_conv(:,:), & ! depth_change_conv_1d
+                       depth_change_cond(:,:), & ! depth_change_cond_1d
+                                  u_surf(:,:), & ! u_surf
+                                  v_surf(:,:), & ! v_surf
+                               rough_mom(:,:), & ! rough_mom
+                              rough_heat(:,:), & ! rough_heat
+                             rough_moist(:,:), & ! rough_moist
+                               rough_mom(:,:), & ! rough_scale
+                                    gust(:,:), & ! gust
+                                  flux_t(:,:), & ! flux_t : surface sensible heat flux
+                                  flux_q(:,:), & ! flux_q : surface moisture flux
+                                  flux_r(:,:), & ! flux_r : surface radiative flux (σT^4)
+                                  flux_u(:,:), & ! flux_u
+                                  flux_v(:,:), & ! flux_v
+                                  drag_m(:,:), & ! cd_m
+                                  drag_t(:,:), & ! cd_t
+                                  drag_q(:,:), & ! cd_q
+                                   w_atm(:,:), & ! w_atm
+                                   ustar(:,:), & ! u_star
+                                   bstar(:,:), & ! b_star
+                                   qstar(:,:), & ! q_star
+                               dhdt_surf(:,:), & ! dhdt_surf
+                               dedt_surf(:,:), & ! dedt_surf
+                               dedq_surf(:,:), & ! dedq_surf
+                               drdt_surf(:,:), & ! drdt_surf
+                                dhdt_atm(:,:), & ! dhdt_atm
+                                dedq_atm(:,:), & ! dedq_atm
+                              dtaudu_atm(:,:), & ! dtaudu_atm
+                              dtaudv_atm(:,:), & ! dtaudv_atm
+                                ex_del_m(:,:), & ! ex_del_m
+                                ex_del_h(:,:), & ! ex_del_h
+                                ex_del_q(:,:), & ! x_del_q
+                                 temp_2m(:,:), & ! temp_2m
+                                   u_10m(:,:), & ! u_10m
+                                   v_10m(:,:), & ! v_10m
+                                    q_2m(:,:), & ! q_2m
+                                   rh_2m(:,:), & ! rh_2m
+                                      delta_t, & ! dt
+                                    land(:,:), & ! land
+                               .not.land(:,:), & ! seawater
+                                   avail(:,:)  ) ! avail (all .true.)
 
   if(id_flux_u > 0) used = send_data(id_flux_u, flux_u, Time)
   if(id_flux_v > 0) used = send_data(id_flux_v, flux_v, Time)

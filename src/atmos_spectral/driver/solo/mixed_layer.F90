@@ -117,6 +117,8 @@ logical :: do_sc_sst        = .false. !mj use specified SSTs
 logical :: do_ape_sst       = .false. ! use the AquaPlanet Experiement (APE) sst profile.
 logical :: specify_sst_over_ocean_only = .false.
 logical :: do_calc_eff_heat_cap = .true. ! assumes specified SST are off the default.
+logical :: do_uniform_sst   = .false. ! use a uniform SST value
+real    :: uniform_sst_value = KELVIN + 25.0
 
 character(len=256) :: sst_file
 character(len=256) :: land_option = 'none'
@@ -153,7 +155,8 @@ namelist/mixed_layer_nml/ evaporation, depth, qflux_amp, qflux_width, tconst,&
                               ice_albedo_value, specify_sst_over_ocean_only, &
                               ice_concentration_threshold, ice_albedo_method,&
                               add_latent_heat_flux_anom,flux_lhe_anom_file_name,&
-                              flux_lhe_anom_field_name, do_ape_sst, qflux_field_name
+                              flux_lhe_anom_field_name, do_ape_sst, qflux_field_name,&
+                              do_uniform_sst, uniform_sst_value
 
 !=================================================================================================================================
 
@@ -500,12 +503,10 @@ if (do_sc_sst) then
     else
         do_calc_eff_heat_cap = .false.
     endif
-else
-    if (do_ape_sst) then
-        ! if using specified sst without land, do not calc the heat capacity
-        do_calc_eff_heat_cap = .false.
-    end if
 endif
+! if using specified sst without land, do not calc the heat capacity
+if (do_ape_sst) do_calc_eff_heat_cap = .false.
+if (do_uniform_sst) do_calc_eff_heat_cap = .false.
 
 
 
@@ -716,6 +717,13 @@ if (do_ape_sst) then
     t_surf = sst_new
 endif
 
+if (do_uniform_sst) then
+    !
+    ! Use a global uniform SST aquaplanet setup
+    !
+    delta_t_surf = uniform_sst_value - t_surf
+    t_surf = uniform_sst_value
+endif
 
 if (do_calc_eff_heat_cap) then
   !s use the land_sea_heat_capacity calculated in mixed_layer_init
