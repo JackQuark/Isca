@@ -108,6 +108,7 @@ integer :: id_ps, id_u, id_v, id_t, id_vor, id_div, id_omega, id_wspd, id_slp
 integer :: id_pres_full, id_pres_half, id_zfull, id_zhalf, id_vort_norm, id_EKE
 integer :: id_uu, id_vv, id_tt, id_omega_omega, id_uv, id_omega_t, id_vw, id_uw, id_ut, id_vt, id_v_vor, id_uz, id_vz, id_omega_z
 integer, allocatable, dimension(:) :: id_tr, id_utr, id_vtr, id_wtr !extra advection diags added by RG
+integer :: id_u_rot, id_v_rot, id_u_div, id_v_div !cyc: extra rot/div wind diags
 real :: gamma, expf, expf_inverse
 character(len=8) :: mod_name = 'dynamics'
 integer, dimension(4) :: axis_id
@@ -1688,6 +1689,18 @@ if(id_slp > 0) then
   expf_inverse = 1./expf
 endif
 
+id_u_rot   = register_diag_field(mod_name, &
+      'ucomp_rot',   axes_3d_full,       Time, 'rotational zonal wind component',         'm/sec',      range=vrange)
+
+id_v_rot   = register_diag_field(mod_name, &
+      'vcomp_rot',   axes_3d_full,       Time, 'rotational meridional wind component',    'm/sec',      range=vrange)
+
+id_u_div   = register_diag_field(mod_name, &
+      'ucomp_div',   axes_3d_full,       Time, 'divergent zonal wind component',         'm/sec',      range=vrange)
+
+id_v_div   = register_diag_field(mod_name, &
+      'vcomp_div',   axes_3d_full,       Time, 'divergent meridional wind component',    'm/sec',      range=vrange)
+
 allocate(id_tr(num_tracers))
 allocate(id_utr(num_tracers)) !Add additional diagnostics RG
 allocate(id_vtr(num_tracers)) !Add additional diagnostics RG
@@ -1834,6 +1847,23 @@ if(id_slp > 0) then
   enddo
   used = send_data(id_slp, slp, Time)
 endif
+
+!cyc: extra diagnostics for rot/div wind components
+if(id_u_rot > 0 .or. id_v_rot > 0) then
+  call vor_div_from_uv_grid(u_grid, v_grid, vor_spec, div_spec, triang=triang_trunc)
+  div_spec(:,:,:) = cmplx(0.0,0.0)
+  call uv_grid_from_vor_div(vor_spec, div_spec, worka3d, workb3d)
+endif
+if(id_u_rot   > 0)    used = send_data(id_u_rot,   worka3d, Time)
+if(id_v_rot   > 0)    used = send_data(id_v_rot,   workb3d, Time)
+
+if(id_u_div > 0 .or. id_v_div > 0) then
+  call vor_div_from_uv_grid(u_grid, v_grid, vor_spec, div_spec, triang=triang_trunc)
+  vor_spec(:,:,:) = cmplx(0.0,0.0)
+  call uv_grid_from_vor_div(vor_spec, div_spec, worka3d, workb3d)
+endif
+if(id_u_div   > 0)    used = send_data(id_u_div,   worka3d, Time)
+if(id_v_div   > 0)    used = send_data(id_v_div,   workb3d, Time)
 
 if(interval_alarm(Time, Time_step, Alarm_time, Alarm_interval)) then
   call global_integrals(Time, p_surf, u_grid, v_grid, t_grid, wg_full, tr_grid(:,:,:,time_level,:))

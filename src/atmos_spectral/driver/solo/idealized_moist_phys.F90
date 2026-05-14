@@ -30,6 +30,8 @@ use         lscale_cond_mod, only: lscale_cond_init, lscale_cond, lscale_cond_en
 
 use qe_moist_convection_mod, only: qe_moist_convection_init, qe_moist_convection, qe_moist_convection_end
 
+use entraining_qe_moist_convection_mod, only: entraining_qe_moist_convection_init, entraining_qe_moist_convection, entraining_qe_moist_convection_end
+
 use                 ras_mod, only: ras_init, ras_end, ras
 
 use        betts_miller_mod, only: betts_miller, betts_miller_init
@@ -108,7 +110,8 @@ integer, parameter :: UNSET = -1,                & !! are NONE, SIMPLE_BETTS_MIL
                       SIMPLE_BETTS_CONV = 1,     &
                       FULL_BETTS_MILLER_CONV = 2,&
                       DRY_CONV = 3,              &
-                      RAS_CONV = 4
+                      RAS_CONV = 4,              &
+                      ENTRAINING_QE = 5
 
 integer :: r_conv_scheme = UNSET  ! the selected convection scheme
 
@@ -420,6 +423,13 @@ else if(uppercase(trim(convection_scheme)) == 'DRY') then
   r_conv_scheme = DRY_CONV
   call error_mesg('idealized_moist_phys','Using dry convection scheme.', NOTE)
   lwet_convection = .false.
+  do_bm           = .false.
+  do_ras          = .false.
+
+else if(uppercase(trim(convection_scheme)) == 'ENTRAINING_QE') then
+  r_conv_scheme = ENTRAINING_QE
+  call error_mesg('idealized_moist_phys','Using entraining qe convection scheme.', NOTE)
+  lwet_convection = .true.
   do_bm           = .false.
   do_ras          = .false.
 
@@ -755,6 +765,9 @@ case(RAS_CONV)
 
         call ras_init (do_strat, axes,Time,tracers_in_ras)
 
+case(ENTRAINING_QE)
+  call entraining_qe_moist_convection_init()
+
 end select
 
 !jp not sure why these diag_fields are fenced when condensation ones above are not...
@@ -956,6 +969,34 @@ case(RAS_CONV)
    if(id_conv_dt_tg > 0) used = send_data(id_conv_dt_tg, conv_dt_tg, Time)
    if(id_conv_rain  > 0) used = send_data(id_conv_rain, precip, Time)
 
+case(ENTRAINING_QE)
+
+    call entraining_qe_moist_convection ( delta_t,  tg(:,:,:,previous),      &
+    grid_tracers(:,:,:,previous,nsphum),        p_full(:,:,:,previous),      &
+                  z_full(:,:,:,current),        p_half(:,:,:,previous),      &
+                  coldT,           rain,                          snow,      &
+                             conv_dt_tg,                    conv_dt_qg,      &
+                                  q_ref,                      convflag,      &
+                                  klzbs,                          cape,      &
+                                    cin,           invtau_q_relaxation,      &
+                    invtau_t_relaxation,                         t_ref,      &
+                                  klcls)
+
+   tg_tmp = conv_dt_tg + tg(:,:,:,previous)
+   qg_tmp = conv_dt_qg + grid_tracers(:,:,:,previous,nsphum)
+!  note the delta's are returned rather than the time derivatives
+
+   conv_dt_tg = conv_dt_tg/delta_t
+   conv_dt_qg = conv_dt_qg/delta_t
+   depth_change_conv = rain/dens_h2o
+   rain       = rain/delta_t
+   precip     = rain
+
+   if(id_conv_dt_qg > 0) used = send_data(id_conv_dt_qg, conv_dt_qg, Time)
+   if(id_conv_dt_tg > 0) used = send_data(id_conv_dt_tg, conv_dt_tg, Time)
+   if(id_conv_rain  > 0) used = send_data(id_conv_rain,  rain,       Time)
+   if(id_cape       > 0) used = send_data(id_cape,       cape,       Time)
+   if(id_cin        > 0) used = send_data(id_cin,        cin,        Time)
 
 case(NO_CONV)
    conv_dt_tg = 0.0
@@ -1074,62 +1115,62 @@ end if
 
 
 if(.not.gp_surface) then 
-  call surface_flux(                                                        &
-                  tg(:,:,num_levels,previous),                              &
- grid_tracers(:,:,num_levels,previous,nsphum),                              &
-                  ug(:,:,num_levels,previous),                              &
-                  vg(:,:,num_levels,previous),                              &
-               p_full(:,:,num_levels,current),                              &
-   z_full(:,:,num_levels,current)-z_surf(:,:),                              &
-             p_half(:,:,num_levels+1,current),                              &
-                                  t_surf(:,:),                              &
-                                  t_surf(:,:),                              &
-                                  q_surf(:,:),                              &
-                                       bucket,                              & 
-                    bucket_depth(:,:,current),                              &
-                        max_bucket_depth_land,                              &
-                         depth_change_lh(:,:),                              &
-                       depth_change_conv(:,:),                              &
-                       depth_change_cond(:,:),                              &
-                                  u_surf(:,:),                              &
-                                  v_surf(:,:),                              &
-                               rough_mom(:,:),                              &
-                              rough_heat(:,:),                              &
-                             rough_moist(:,:),                              &
-                               rough_mom(:,:),                              &
-                                    gust(:,:),                              &
-                                  flux_t(:,:),                              &
-                                  flux_q(:,:),                              &
-                                  flux_r(:,:),                              &
-                                  flux_u(:,:),                              &
-                                  flux_v(:,:),                              &
-                                  drag_m(:,:),                              &
-                                  drag_t(:,:),                              &
-                                  drag_q(:,:),                              &
-                                   w_atm(:,:),                              &
-                                   ustar(:,:),                              &
-                                   bstar(:,:),                              &
-                                   qstar(:,:),                              &
-                               dhdt_surf(:,:),                              &
-                               dedt_surf(:,:),                              &
-                               dedq_surf(:,:),                              &
-                               drdt_surf(:,:),                              &
-                                dhdt_atm(:,:),                              &
-                                dedq_atm(:,:),                              &
-                              dtaudu_atm(:,:),                              &
-                              dtaudv_atm(:,:),                              &
-                                ex_del_m(:,:),                              &
-                                ex_del_h(:,:),                              &
-                                ex_del_q(:,:),                              &
-                                 temp_2m(:,:),                              &
-                                   u_10m(:,:),                              &
-                                   v_10m(:,:),                              &
-                                    q_2m(:,:),                              &
-                                   rh_2m(:,:),                              &
-                                      delta_t,                              &
-                                    land(:,:),                              &
-                               .not.land(:,:),                              &
-                                   avail(:,:)  )
+  call surface_flux(                           &
+                  tg(:,:,num_levels,previous), & ! t_atm
+ grid_tracers(:,:,num_levels,previous,nsphum), & ! q_atm_in
+                  ug(:,:,num_levels,previous), & ! u_atm
+                  vg(:,:,num_levels,previous), & ! v_atm
+               p_full(:,:,num_levels,current), & ! p_atm
+   z_full(:,:,num_levels,current)-z_surf(:,:), & ! z_atm
+             p_half(:,:,num_levels+1,current), & ! p_surf
+                                  t_surf(:,:), & ! t_surf
+                                  t_surf(:,:), & ! t_ca
+                                  q_surf(:,:), & ! q_surf
+                                       bucket, & ! bucket
+                    bucket_depth(:,:,current), & ! bucket_depth
+                        max_bucket_depth_land, & ! max_bucket_depth_land
+                         depth_change_lh(:,:), & ! depth_change_lh_1d
+                       depth_change_conv(:,:), & ! depth_change_conv_1d
+                       depth_change_cond(:,:), & ! depth_change_cond_1d
+                                  u_surf(:,:), & ! u_surf
+                                  v_surf(:,:), & ! v_surf
+                               rough_mom(:,:), & ! rough_mom
+                              rough_heat(:,:), & ! rough_heat
+                             rough_moist(:,:), & ! rough_moist
+                               rough_mom(:,:), & ! rough_scale
+                                    gust(:,:), & ! gust
+                                  flux_t(:,:), & ! flux_t : surface sensible heat flux
+                                  flux_q(:,:), & ! flux_q : surface moisture flux
+                                  flux_r(:,:), & ! flux_r : surface radiative flux (σT^4)
+                                  flux_u(:,:), & ! flux_u
+                                  flux_v(:,:), & ! flux_v
+                                  drag_m(:,:), & ! cd_m
+                                  drag_t(:,:), & ! cd_t
+                                  drag_q(:,:), & ! cd_q
+                                   w_atm(:,:), & ! w_atm
+                                   ustar(:,:), & ! u_star
+                                   bstar(:,:), & ! b_star
+                                   qstar(:,:), & ! q_star
+                               dhdt_surf(:,:), & ! dhdt_surf
+                               dedt_surf(:,:), & ! dedt_surf
+                               dedq_surf(:,:), & ! dedq_surf
+                               drdt_surf(:,:), & ! drdt_surf
+                                dhdt_atm(:,:), & ! dhdt_atm
+                                dedq_atm(:,:), & ! dedq_atm
+                              dtaudu_atm(:,:), & ! dtaudu_atm
+                              dtaudv_atm(:,:), & ! dtaudv_atm
+                                ex_del_m(:,:), & ! ex_del_m
+                                ex_del_h(:,:), & ! ex_del_h
+                                ex_del_q(:,:), & ! x_del_q
+                                 temp_2m(:,:), & ! temp_2m
+                                   u_10m(:,:), & ! u_10m
+                                   v_10m(:,:), & ! v_10m
+                                    q_2m(:,:), & ! q_2m
+                                   rh_2m(:,:), & ! rh_2m
+                                      delta_t, & ! dt
+                                    land(:,:), & ! land
+                               .not.land(:,:), & ! seawater
+                                   avail(:,:)  ) ! avail (all .true.)
 
   if(id_flux_u > 0) used = send_data(id_flux_u, flux_u, Time)
   if(id_flux_v > 0) used = send_data(id_flux_v, flux_v, Time)
@@ -1398,7 +1439,10 @@ subroutine idealized_moist_phys_end
 
 deallocate (dt_bucket, filt)
 if(two_stream_gray)      call two_stream_gray_rad_end
-if(lwet_convection)      call qe_moist_convection_end
+if(lwet_convection)      then 
+   if(r_conv_scheme == SIMPLE_BETTS_CONV) call qe_moist_convection_end 
+   if(r_conv_scheme == ENTRAINING_QE) call entraining_qe_moist_convection_end 
+endif
 if(do_ras)               call ras_end
 
 if(turb) then
